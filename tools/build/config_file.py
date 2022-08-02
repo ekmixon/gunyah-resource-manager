@@ -153,7 +153,7 @@ class Configuration:
         self.local_env.clear()
 
         with open(config_file, 'r', encoding='utf-8') as f:
-            for s in f.readlines():
+            for s in f:
                 words = s.split()
                 if not words or words[0].startswith('#'):
                     # Skip comments or blank lines
@@ -171,17 +171,17 @@ class Configuration:
                 elif words[0] == "include":
                     for w in words[1:]:
                         d = self._relpath(os.path.join(cur_dir, w))
-                        self.graph.append_env("CFLAGS", "-I " + d)
+                        self.graph.append_env("CFLAGS", f"-I {d}")
                 elif words[0] == "arch_include":
                     if self.arch is not None and words[1] == self.arch:
                         for w in words[2:]:
                             d = self._relpath(os.path.join(cur_dir, w))
-                            self.graph.append_env("CFLAGS", "-I " + d)
+                            self.graph.append_env("CFLAGS", f"-I {d}")
                 elif words[0] == "board_include":
                     if self.board is not None and words[1] == self.board:
                         for w in words[2:]:
                             d = self._relpath(os.path.join(cur_dir, w))
-                            self.graph.append_env("CFLAGS", "-I " + d)
+                            self.graph.append_env("CFLAGS", f"-I {d}")
                 elif words[0] == "local_include":
                     for w in words[1:]:
                         d = self._relpath(os.path.join(cur_dir, w))
@@ -223,7 +223,7 @@ class Configuration:
                     assert(self.binary_name is not None)
                     self._set_program()
                 elif words[0] == "static_lib":
-                    self.binary_name = "lib" + words[0] + ".a"
+                    self.binary_name = f"lib{words[0]}.a"
                 elif words[0] == "end_static_lib":
                     assert(self.binary_name is not None)
                     self._set_static_lib()
@@ -289,8 +289,8 @@ class Configuration:
         # Use Clang to preprocess DSL files.
         self.graph.add_env('CPP', '${CLANG}-cpp -target ${TARGET_TRIPLE}')
 
-        sysroot = llvm_root + '/' + self.target_triple + '/libc/'
-        self.graph.append_env("LDFLAGS", '--sysroot=' + sysroot)
+        sysroot = f'{llvm_root}/{self.target_triple}/libc/'
+        self.graph.append_env("LDFLAGS", f'--sysroot={sysroot}')
 
         logger.warn("Test programs are disabled by default")
 
@@ -304,7 +304,7 @@ class Configuration:
         """
         out_dir = os.path.join(self.graph.build_dir, file_dir, 'obj')
         i = os.path.join(file_dir, src)
-        o = os.path.join(out_dir, src + '.o')
+        o = os.path.join(out_dir, f'{src}.o')
         self._add_source_file(i, o, requires, local_env)
         self.objects.add(o)
 
@@ -313,7 +313,7 @@ class Configuration:
             local_env['LOCAL_CPPFLAGS'] += ' '
         else:
             local_env['LOCAL_CPPFLAGS'] = ''
-        local_env['LOCAL_CPPFLAGS'] += '-iquote ' + d
+        local_env['LOCAL_CPPFLAGS'] += f'-iquote {d}'
 
     def _add_include(self, include, local_env):
         """
@@ -329,12 +329,12 @@ class Configuration:
         local_env['LOCAL_CFLAGS'] += ' '.join(flags)
 
     def _add_global_define(self, d):
-        self.graph.append_env('CPPFLAGS', "-D" + d)
-        self.graph.append_env('CODEGEN_CONFIGS', "-D" + d)
+        self.graph.append_env('CPPFLAGS', f"-D{d}")
+        self.graph.append_env('CODEGEN_CONFIGS', f"-D{d}")
 
     def _set_link_script(self, d, link_file):
         linker_script_in = os.path.join(d, link_file)
-        linker_script = os.path.join(self.graph.build_dir, link_file + '.pp')
+        linker_script = os.path.join(self.graph.build_dir, f'{link_file}.pp')
         self.graph.add_target([linker_script], 'cpp-dsl', [linker_script_in])
         self.graph.append_env('TARGET_LDFLAGS',
                               '-Wl,-T,{:s}'.format(linker_script))
@@ -342,9 +342,7 @@ class Configuration:
 
     def _set_program(self):
         bin_file = os.path.join(self.graph.build_dir, self.binary_name)
-        deps = None
-        if self.linker_script is not None:
-            deps = [self.linker_script]
+        deps = [self.linker_script] if self.linker_script is not None else None
         assert(len(self.objects) != 0)
         self.graph.add_target([bin_file], 'ld', sorted(self.objects),
                               depends=deps)

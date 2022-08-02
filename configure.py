@@ -59,8 +59,7 @@ class ClangCompDB(object):
         for c in self.commands:
             c['command'] = self.var_subst(c['command'], **c['local_env'])
             del c['local_env']
-        d = os.path.dirname(self.path)
-        if d:
+        if d := os.path.dirname(self.path):
             try:
                 os.makedirs(d)
             except OSError as e:
@@ -104,7 +103,7 @@ class AbstractBuildGraph(object):
             self._rule_byproducts = dict(_parent._rule_byproducts)
 
     def __call__(self, **kwargs):
-        for k in kwargs.keys():
+        for k in kwargs:
             self.add_env(k, kwargs[k], replace=True)
 
         if not self._variants:
@@ -399,7 +398,7 @@ class AbstractBuildGraph(object):
         if form == 'clang':
             compdb = ClangCompDB(target, self._var_subst)
         else:
-            raise NotImplementedError("Unknown compdb form: " + repr(form))
+            raise NotImplementedError(f"Unknown compdb form: {repr(form)}")
         self._compdbs[target] = compdb
 
     def _expand_target_list(self, target_list):
@@ -451,7 +450,7 @@ class NinjaBuild(AbstractBuildGraph):
         ninja_file = os.path.join(build_dir, 'rules.ninja')
         self._subninja_files.append(ninja_file)
         self._lines.append('')
-        self._lines.append('subninja ' + ninja_file)
+        self._lines.append(f'subninja {ninja_file}')
 
         variant = type(self)(ninja_file, build_dir=build_dir, _parent=self)
 
@@ -554,11 +553,11 @@ class NinjaBuild(AbstractBuildGraph):
                                          compdbs=compdbs)
         self._rule_names.add(name)
         self._lines.append('')
-        self._lines.append('rule ' + name)
-        self._lines.append('    command = ' + command)
-        self._lines.append('    description = ' + name + ' ${out}')
+        self._lines.append(f'rule {name}')
+        self._lines.append(f'    command = {command}')
+        self._lines.append(f'    description = {name}' + ' ${out}')
         if depfile is not None:
-            self._lines.append('    depfile = ' + depfile)
+            self._lines.append(f'    depfile = {depfile}')
         if generator:
             self._lines.append('    generator = true')
 
@@ -583,8 +582,7 @@ class NinjaBuild(AbstractBuildGraph):
             # Automatically add a dependency on the parent directory of each
             # target that is not at the top level
             for t in targets:
-                target_dir = os.path.dirname(os.path.normpath(t))
-                if target_dir:
+                if target_dir := os.path.dirname(os.path.normpath(t)):
                     self._mkdir(target_dir)
                     requires = requires + (target_dir,)
 
@@ -593,7 +591,7 @@ class NinjaBuild(AbstractBuildGraph):
         if byproducts:
             build_line += ' | '
             build_line += ' '.join(byproducts)
-        build_line += ' : ' + rule
+        build_line += f' : {rule}'
         if sources:
             build_line += ' '
             build_line += ' '.join(sources)
@@ -601,24 +599,25 @@ class NinjaBuild(AbstractBuildGraph):
             build_line += ' | '
             build_line += ' '.join(depends)
         if always:
-            build_line += ' ' + self._phony_always + ' '
+            build_line += f' {self._phony_always} '
         if requires:
             build_line += ' || '
             build_line += ' '.join(requires)
         self._lines.append(build_line)
 
         for name in sorted(local_env.keys()):
-            self._lines.append('    {} = {}'.format(name, local_env[name]))
+            self._lines.append(f'    {name} = {local_env[name]}')
 
     def add_alias(self, alias, targets):
         targets = self._expand_target_list(targets)
         self._lines.append('')
-        self._lines.append('build ' + self._escape(alias) + ' : phony ' +
-                           ' '.join(targets))
+        self._lines.append(
+            (f'build {self._escape(alias)} : phony ' + ' '.join(targets))
+        )
 
     def add_default_target(self, target):
         self._lines.append('')
-        self._lines.append('default ' + self._escape(target))
+        self._lines.append(f'default {self._escape(target)}')
 
     def add_gen_source(self, source):
         self._gen_sources.add(os.path.normpath(source))
@@ -626,11 +625,7 @@ class NinjaBuild(AbstractBuildGraph):
     def _mkdir(self, target_dir):
         if target_dir in self._mkdir_cache:
             return
-        # Always add parent directories first, if any. This ensures that
-        # the _mkdir_targets list is ordered with the deepest directories
-        # last.
-        parent = os.path.dirname(target_dir)
-        if parent:
+        if parent := os.path.dirname(target_dir):
             self._mkdir(parent)
         self._mkdir_cache.add(target_dir)
         self._mkdir_targets.append(target_dir)
@@ -651,10 +646,7 @@ class SConsBuild(AbstractBuildGraph):
         self.Action = Action
         self._rule_depfiles = {}
         self._root_dir = env.Dir('#.')
-        if _parent is None:
-            self._default_targets = []
-        else:
-            self._default_targets = _parent._default_targets
+        self._default_targets = [] if _parent is None else _parent._default_targets
         super(SConsBuild, self).__init__(_parent=_parent, **kwargs)
 
     def __call__(self, **kwargs):
@@ -702,7 +694,7 @@ class SConsBuild(AbstractBuildGraph):
 
     def add_rule(self, name, command, depfile=None, depfile_external=False,
                  compdbs=None):
-        if 'Rule_' + name in self.env['BUILDERS']:
+        if f'Rule_{name}' in self.env['BUILDERS']:
             raise KeyError("Duplicate definition of rule {name}"
                            .format(name=name))
         super(SConsBuild, self).add_rule(name, command, depfile=depfile,
@@ -713,7 +705,7 @@ class SConsBuild(AbstractBuildGraph):
         command = re.sub(r'\$(out\b|{out})', '${TARGETS}', command)
         description = name + ' ${TARGETS}'
         builder = self.Builder(action=self.Action(command, description))
-        self.env.Append(BUILDERS={'Rule_' + name: builder})
+        self.env.Append(BUILDERS={f'Rule_{name}': builder})
         if depfile is not None:
             self._rule_depfiles[name] = depfile
 
@@ -733,8 +725,10 @@ class SConsBuild(AbstractBuildGraph):
                               self._rule_byproducts[rule])
             byproducts = byproducts + (depsfile,)
 
-        tnodes = getattr(self.env, 'Rule_' + rule)(
-            target=targets, source=sources, **local_env)
+        tnodes = getattr(self.env, f'Rule_{rule}')(
+            target=targets, source=sources, **local_env
+        )
+
         if depends:
             self.env.Depends(tnodes, depends)
         if requires:
